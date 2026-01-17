@@ -107,3 +107,4 @@ DATABASE_URL="postgresql://postgres.xijcnkdwrkfyajyyuwqe:Maro1905,.10@aws-0-us-e
 DATABASE_URL="postgresql://postgres.xijcnkdwrkfyajyyuwqe:Maro1905,.10@aws-0-us-east-1.pooler.supabase.com:5432/postgres?schema=public"
 ```
 
+

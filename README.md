@@ -91,3 +91,4 @@ Todos los endpoints admin requieren `TenantGuard` para validar tenant.
 3. Implementar cálculo de disponibilidad
 4. Implementar emails (Resend)
 
+

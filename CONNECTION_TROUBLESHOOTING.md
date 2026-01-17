@@ -118,3 +118,4 @@ La URL del pooler puede variar según la región de tu proyecto:
 
 Verifica en Supabase Dashboard cuál es la región correcta para tu proyecto.
 
+

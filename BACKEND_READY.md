@@ -185,3 +185,4 @@ npm run prisma:generate
 - `BACKEND_SUMMARY.md` - Resumen de arquitectura
 - `CONNECTION_TROUBLESHOOTING.md` - Solución de problemas de conexión
 
+

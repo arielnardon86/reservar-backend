@@ -209,3 +209,4 @@ npm run start:dev
 
 Ver `SETUP_INSTRUCTIONS.md` para pasos detallados de configuración.
 
+

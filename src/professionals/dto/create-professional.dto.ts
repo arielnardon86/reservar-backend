@@ -35,3 +35,4 @@ export class CreateProfessionalDto {
   serviceIds?: string[]; // IDs de servicios que puede ofrecer
 }
 
+

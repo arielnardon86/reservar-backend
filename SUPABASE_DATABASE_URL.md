@@ -111,3 +111,4 @@ Si funciona, verás que se crean las tablas en Supabase.
 
 **¿Necesitas ayuda para encontrarla?** Puedo guiarte paso a paso.
 
+

@@ -155,3 +155,4 @@ All migrations have been successfully applied.
 
 **¿Ya obtuviste la DATABASE_URL de Railway? Si me ayudas con los primeros caracteres (sin la contraseña completa), puedo ayudarte a verificar el formato.** 🚀
 
+

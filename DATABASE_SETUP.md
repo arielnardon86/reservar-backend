@@ -190,3 +190,4 @@ REDIS_PORT=6379
 - Crea la base de datos primero
 - Verifica el nombre en la URL
 
+

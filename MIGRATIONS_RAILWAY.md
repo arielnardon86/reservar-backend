@@ -153,3 +153,4 @@ Si Prisma Studio se abre y ves las tablas, significa que las migrations funciona
 
 **¿Cuál opción prefieres usar?** 🚀
 
+
