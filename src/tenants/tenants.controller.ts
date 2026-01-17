@@ -25,8 +25,16 @@ export class TenantsController {
 
   // Admin: Crear tenant (durante onboarding)
   @Post()
-  create(@Body() createTenantDto: CreateTenantDto) {
-    return this.tenantsService.create(createTenantDto);
+  async create(@Body() createTenantDto: CreateTenantDto) {
+    console.log('📥 Received tenant creation request:', createTenantDto);
+    try {
+      const tenant = await this.tenantsService.create(createTenantDto);
+      console.log('✅ Tenant created successfully:', tenant.id);
+      return tenant;
+    } catch (error) {
+      console.error('❌ Error in tenant controller:', error);
+      throw error;
+    }
   }
 
   // Admin: Listar todos (con autenticación en el futuro)

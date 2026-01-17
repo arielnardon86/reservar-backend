@@ -8,30 +8,46 @@ export class TenantsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createTenantDto: CreateTenantDto) {
-    // Crear tenant y usuario admin en una transacción
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Crear tenant
-      const tenant = await tx.tenant.create({
-        data: {
-          ...createTenantDto,
-          primaryColor: createTenantDto.primaryColor || '#3b82f6',
-          timezone: createTenantDto.timezone || 'America/Argentina/Buenos_Aires',
-          locale: createTenantDto.locale || 'es-AR',
-        },
-      });
+    try {
+      console.log('📝 Creating tenant with data:', JSON.stringify(createTenantDto, null, 2));
+      
+      // Crear tenant y usuario admin en una transacción
+      return await this.prisma.$transaction(async (tx) => {
+        // 1. Crear tenant
+        console.log('1️⃣ Creating tenant...');
+        const tenant = await tx.tenant.create({
+          data: {
+            ...createTenantDto,
+            primaryColor: createTenantDto.primaryColor || '#3b82f6',
+            timezone: createTenantDto.timezone || 'America/Argentina/Buenos_Aires',
+            locale: createTenantDto.locale || 'es-AR',
+          },
+        });
+        console.log('✅ Tenant created:', tenant.id);
 
-      // 2. Crear usuario admin automáticamente usando el email del tenant
-      await tx.user.create({
-        data: {
-          email: createTenantDto.email,
-          name: createTenantDto.name, // Usar el nombre del negocio como nombre del usuario
-          tenantId: tenant.id,
-          role: 'admin',
-        },
-      });
+        // 2. Crear usuario admin automáticamente usando el email del tenant
+        console.log('2️⃣ Creating admin user...');
+        await tx.user.create({
+          data: {
+            email: createTenantDto.email,
+            name: createTenantDto.name, // Usar el nombre del negocio como nombre del usuario
+            tenantId: tenant.id,
+            role: 'admin',
+          },
+        });
+        console.log('✅ Admin user created');
 
-      return tenant;
-    });
+        return tenant;
+      });
+    } catch (error) {
+      console.error('❌ Error creating tenant:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        meta: error.meta,
+      });
+      throw error;
+    }
   }
 
   async findAll() {
