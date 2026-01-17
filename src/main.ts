@@ -21,6 +21,8 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id'],
   });
   
+  // Set global prefix for all routes
+  app.setGlobalPrefix('api');
   
   // Global validation pipe
   app.useGlobalPipes(
