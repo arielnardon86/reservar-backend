@@ -284,7 +284,8 @@ export class AppointmentsService {
       return []; // No hay horarios configurados
     }
 
-    // Obtener appointments existentes
+    // Obtener appointments existentes (incluyendo PENDING, CONFIRMED, COMPLETED)
+    // Excluir solo CANCELLED y NO_SHOW
     const appointments = await this.prisma.appointment.findMany({
       where: {
         tenantId,
@@ -294,10 +295,22 @@ export class AppointmentsService {
           lte: endOfDay,
         },
         status: {
-          not: AppointmentStatus.CANCELLED,
+          notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW],
         },
       },
+      orderBy: {
+        startTime: 'asc',
+      },
     });
+    
+    console.log(`📅 Found ${appointments.length} existing appointments for ${query.date}:`, 
+      appointments.map(apt => ({
+        id: apt.id,
+        startTime: apt.startTime.toISOString(),
+        endTime: apt.endTime.toISOString(),
+        status: apt.status,
+      }))
+    );
 
     // Generar slots disponibles
     const slots: { time: string; available: boolean }[] = [];
