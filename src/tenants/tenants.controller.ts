@@ -22,7 +22,8 @@ export class TenantsController {
   // Admin: Crear tenant (durante onboarding) - DEBE IR ANTES de las rutas GET para evitar conflictos
   @Post()
   async create(@Body() createTenantDto: CreateTenantDto) {
-    console.log('📥 POST /tenants - Received tenant creation request:', createTenantDto);
+    console.log('📥 POST /tenants - Request received at controller');
+    console.log('📥 POST /tenants - Body:', JSON.stringify(createTenantDto, null, 2));
     try {
       const tenant = await this.tenantsService.create(createTenantDto);
       console.log('✅ Tenant created successfully:', tenant.id);

@@ -4,6 +4,9 @@ import { Request, Response, NextFunction } from 'express';
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
+    // Log todas las requests para debugging
+    console.log(`[TenantMiddleware] ${req.method} ${req.path}`);
+    
     // Extraer tenant_id de diferentes fuentes:
     // 1. Header X-Tenant-Id (para admin) - Express normaliza headers a lowercase
     // 2. Subdomain (futuro: tenant1.turnero.com)
@@ -17,18 +20,15 @@ export class TenantMiddleware implements NestMiddleware {
       undefined;
     
     // Debug logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[TenantMiddleware] Request to:', req.path);
-      console.log('[TenantMiddleware] Headers:', {
-        'x-tenant-id': req.headers['x-tenant-id'],
-        'X-Tenant-Id': req.headers['x-tenant-id'],
-        allHeaders: Object.keys(req.headers).filter(k => k.toLowerCase().includes('tenant')),
-      });
-      console.log('[TenantMiddleware] Extracted tenantId:', tenantId);
-    }
+    console.log('[TenantMiddleware] Request details:', {
+      method: req.method,
+      path: req.path,
+      'x-tenant-id': req.headers['x-tenant-id'],
+      extractedTenantId: tenantId,
+    });
     
     req['tenantId'] = tenantId;
-    next();
+    next(); // IMPORTANTE: siempre llamar next() para continuar
   }
 }
 
