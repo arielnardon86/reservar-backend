@@ -17,13 +17,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
 
-  // Público: Obtener tenant por slug (para landing pública)
-  @Get('slug/:slug')
-  findBySlug(@Param('slug') slug: string) {
-    return this.tenantsService.findBySlug(slug);
-  }
-
-  // Admin: Crear tenant (durante onboarding)
+  // Admin: Crear tenant (durante onboarding) - DEBE IR ANTES de las rutas GET para evitar conflictos
   @Post()
   async create(@Body() createTenantDto: CreateTenantDto) {
     console.log('📥 Received tenant creation request:', createTenantDto);
@@ -35,6 +29,12 @@ export class TenantsController {
       console.error('❌ Error in tenant controller:', error);
       throw error;
     }
+  }
+
+  // Público: Obtener tenant por slug (para landing pública)
+  @Get('slug/:slug')
+  findBySlug(@Param('slug') slug: string) {
+    return this.tenantsService.findBySlug(slug);
   }
 
   // Admin: Listar todos (con autenticación en el futuro)
