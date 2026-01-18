@@ -19,6 +19,7 @@ model Tenant {
   name        String   // Nombre del negocio
   email       String   // Email de contacto
   phone       String?  // Teléfono opcional
+  address     String?  // Dirección física del negocio
   
   // Branding
   logoUrl     String?  // URL del logo

@@ -19,6 +19,10 @@ export class CreateTenantDto {
 
   @IsString()
   @IsOptional()
+  address?: string;
+
+  @IsString()
+  @IsOptional()
   logoUrl?: string;
 
   @IsString()
