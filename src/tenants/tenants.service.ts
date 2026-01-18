@@ -58,6 +58,7 @@ export class TenantsService {
         name: true,
         email: true,
         phone: true,
+        address: true,
         logoUrl: true,
         primaryColor: true,
         secondaryColor: true,
