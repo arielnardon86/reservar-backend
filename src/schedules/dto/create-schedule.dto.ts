@@ -3,7 +3,11 @@ import { IsInt, IsString, IsOptional, IsBoolean, IsNotEmpty, Min, Max } from 'cl
 export class CreateScheduleDto {
   @IsString()
   @IsOptional()
-  professionalId?: string; // Si es null, es horario global
+  serviceId?: string; // Espacio común (SUM, Gimnasio, etc.)
+
+  @IsString()
+  @IsOptional()
+  professionalId?: string; // Si es null y serviceId null, es horario global
 
   @IsInt()
   @Min(0)

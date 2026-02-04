@@ -1,48 +1,70 @@
 import { Injectable } from '@nestjs/common';
 import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
+
+const GMAIL_FROM = 'ReservAr <reservar.app.ok@gmail.com>';
 
 @Injectable()
 export class NotificationsService {
-  private resend: Resend;
+  private resend: Resend | null = null;
+  private gmailTransporter: Transporter | null = null;
 
   constructor(private prisma: PrismaService) {
-    // Inicializar Resend solo si hay API key
-    const apiKey = process.env.RESEND_API_KEY;
-    if (apiKey) {
-      this.resend = new Resend(apiKey);
-    } else {
-      console.warn('⚠️ RESEND_API_KEY no configurada. Los emails no se enviarán.');
+    const resendKey = process.env.RESEND_API_KEY;
+    if (resendKey) {
+      this.resend = new Resend(resendKey);
     }
+
+    const gmailUser = process.env.GMAIL_USER || process.env.GMAIL_EMAIL;
+    const gmailPass = process.env.GMAIL_APP_PASSWORD;
+    if (gmailUser && gmailPass) {
+      this.gmailTransporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: gmailUser,
+          pass: gmailPass,
+        },
+      });
+      console.log('📧 Gmail configurado para envío de confirmaciones y recordatorios:', gmailUser);
+    } else {
+      console.warn('⚠️ GMAIL_USER y GMAIL_APP_PASSWORD no configurados. Para enviar desde tu casilla, configuralos en .env');
+    }
+  }
+
+  /** Indica si debemos usar Gmail para reservas (confirmación, recordatorio, cancelación) */
+  private useGmail(): boolean {
+    return this.gmailTransporter !== null;
   }
 
   async sendMagicLink(email: string, token: string) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const magicLink = `${frontendUrl}/auth/callback?token=${token}`;
-
-    // Si no hay Resend configurado, solo loguear (desarrollo o producción sin config)
-    if (!this.resend || !process.env.RESEND_API_KEY) {
-      console.log('📧 Magic Link (Resend no configurado):', magicLink);
-      console.warn('⚠️ Para enviar emails, configura RESEND_API_KEY en Railway');
-      return { success: true, message: 'Magic link generado (Resend no configurado)', magicLink };
+    if (!this.resend && !this.gmailTransporter) {
+      console.log('📧 Magic Link (email no configurado):', magicLink);
+      return { success: true, message: 'Magic link generado (email no configurado)', magicLink };
     }
-
     try {
-      const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-      console.log(`📧 Enviando magic link a ${email} desde ${fromEmail}`);
-      
-      const result = await this.resend.emails.send({
-        from: fromEmail,
-        to: email,
-        subject: 'Iniciar sesión en Turnero',
-        html: this.getMagicLinkTemplate(magicLink),
-      });
-
-      console.log('✅ Magic link enviado exitosamente:', result);
+      if (this.gmailTransporter) {
+        await this.gmailTransporter.sendMail({
+          from: GMAIL_FROM,
+          to: email,
+          subject: 'Iniciar sesión en ReservAr',
+          html: this.getMagicLinkTemplate(magicLink),
+        });
+      } else if (this.resend) {
+        await this.resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'ReservAr <onboarding@resend.dev>',
+          to: email,
+          replyTo: 'reservar.app.ok@gmail.com',
+          subject: 'Iniciar sesión en ReservAr',
+          html: this.getMagicLinkTemplate(magicLink),
+        });
+      }
       return { success: true, message: 'Magic link enviado por email' };
     } catch (error) {
       console.error('❌ Error sending magic link email:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
@@ -68,46 +90,59 @@ export class NotificationsService {
     const startDate = new Date(appointment.startTime);
     const endDate = new Date(appointment.endTime);
 
-    // Generar .ics content
+    const locationLabel = appointment.professional?.fullName || appointment.service.name;
     const icsContent = this.generateICS(
       appointment.service.name,
-      appointment.professional.fullName,
+      locationLabel,
       startDate,
       endDate,
-      tenant?.name || 'Turnero',
+      tenant?.name || 'ReservAr',
     );
 
-    // En desarrollo, solo loguear
-    if (process.env.NODE_ENV === 'development' && !process.env.RESEND_API_KEY) {
-      console.log('📧 Email de confirmación (desarrollo):', {
-        to: appointment.customer.email,
-        subject: `Confirmación de turno - ${appointment.service.name}`,
-      });
+    const subject = `Confirmación de reserva - ${appointment.service.name}`;
+    const html = this.getAppointmentConfirmationTemplate(
+      appointment,
+      tenant,
+      startDate,
+      endDate,
+    );
+    const to = appointment.customer.email;
+    const icsFilename = `reserva-${startDate.toISOString().split('T')[0]}.ics`;
+
+    if (!this.useGmail() && (!this.resend || process.env.NODE_ENV === 'development')) {
+      console.log('📧 Email de confirmación (sin envío):', { to, subject });
       return { success: true, message: 'Email de confirmación generado (modo desarrollo)' };
     }
 
     try {
-      await this.resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'noreply@turnero.com',
-        to: appointment.customer.email,
-        subject: `Confirmación de turno - ${appointment.service.name}`,
-        html: this.getAppointmentConfirmationTemplate(
-          appointment,
-          tenant,
-          startDate,
-          endDate,
-        ),
-        attachments: [
-          {
-            filename: `turno-${startDate.toISOString().split('T')[0]}.ics`,
-            content: Buffer.from(icsContent).toString('base64'),
-          },
-        ],
-      });
+      if (this.useGmail() && this.gmailTransporter) {
+        console.log('📧 Enviando confirmación por Gmail a:', to);
+        await this.gmailTransporter.sendMail({
+          from: GMAIL_FROM,
+          to,
+          replyTo: 'reservar.app.ok@gmail.com',
+          subject,
+          html,
+          attachments: [{ filename: icsFilename, content: icsContent }],
+        });
+        console.log('✅ Email de confirmación enviado a', to);
+      } else if (this.resend) {
+        await this.resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'ReservAr <onboarding@resend.dev>',
+          replyTo: 'reservar.app.ok@gmail.com',
+          to,
+          subject,
+          html,
+          attachments: [
+            { filename: icsFilename, content: Buffer.from(icsContent).toString('base64') },
+          ],
+        });
+      }
 
       return { success: true, message: 'Email de confirmación enviado' };
-    } catch (error) {
-      console.error('Error sending confirmation email:', error);
+    } catch (error: any) {
+      console.error('❌ Error enviando email de confirmación:', error?.message || error);
+      if (error?.response) console.error('Gmail response:', error.response);
       throw error;
     }
   }
@@ -132,23 +167,33 @@ export class NotificationsService {
 
     const startDate = new Date(appointment.startTime);
 
-    // En desarrollo, solo loguear
-    if (process.env.NODE_ENV === 'development' && !process.env.RESEND_API_KEY) {
-      console.log('📧 Recordatorio (desarrollo):', {
-        to: appointment.customer.email,
-        subject: `Recordatorio: Tu turno es mañana - ${appointment.service.name}`,
-      });
+    const subject = `Recordatorio: Tu reserva es mañana - ${appointment.service.name}`;
+    const html = this.getReminderTemplate(appointment, tenant, startDate);
+    const to = appointment.customer.email;
+
+    if (!this.useGmail() && (!this.resend || process.env.NODE_ENV === 'development')) {
+      console.log('📧 Recordatorio (sin envío):', { to, subject });
       return { success: true, message: 'Recordatorio generado (modo desarrollo)' };
     }
 
     try {
-      await this.resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'noreply@turnero.com',
-        to: appointment.customer.email,
-        subject: `Recordatorio: Tu turno es mañana - ${appointment.service.name}`,
-        html: this.getReminderTemplate(appointment, tenant, startDate),
-      });
-
+      if (this.useGmail() && this.gmailTransporter) {
+        await this.gmailTransporter.sendMail({
+          from: GMAIL_FROM,
+          to,
+          replyTo: 'reservar.app.ok@gmail.com',
+          subject,
+          html,
+        });
+      } else if (this.resend) {
+        await this.resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'ReservAr <onboarding@resend.dev>',
+          replyTo: 'reservar.app.ok@gmail.com',
+          to,
+          subject,
+          html,
+        });
+      }
       return { success: true, message: 'Recordatorio enviado' };
     } catch (error) {
       console.error('Error sending reminder email:', error);
@@ -174,23 +219,33 @@ export class NotificationsService {
       where: { id: appointment.tenantId },
     });
 
-    // En desarrollo, solo loguear
-    if (process.env.NODE_ENV === 'development' && !process.env.RESEND_API_KEY) {
-      console.log('📧 Cancelación (desarrollo):', {
-        to: appointment.customer.email,
-        subject: `Turno cancelado - ${appointment.service.name}`,
-      });
+    const subject = `Reserva cancelada - ${appointment.service.name}`;
+    const html = this.getCancellationTemplate(appointment, tenant, reason);
+    const to = appointment.customer.email;
+
+    if (!this.useGmail() && (!this.resend || process.env.NODE_ENV === 'development')) {
+      console.log('📧 Cancelación (sin envío):', { to, subject });
       return { success: true, message: 'Email de cancelación generado (modo desarrollo)' };
     }
 
     try {
-      await this.resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'noreply@turnero.com',
-        to: appointment.customer.email,
-        subject: `Turno cancelado - ${appointment.service.name}`,
-        html: this.getCancellationTemplate(appointment, tenant, reason),
-      });
-
+      if (this.useGmail() && this.gmailTransporter) {
+        await this.gmailTransporter.sendMail({
+          from: GMAIL_FROM,
+          to,
+          replyTo: 'reservar.app.ok@gmail.com',
+          subject,
+          html,
+        });
+      } else if (this.resend) {
+        await this.resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'ReservAr <onboarding@resend.dev>',
+          replyTo: 'reservar.app.ok@gmail.com',
+          to,
+          subject,
+          html,
+        });
+      }
       return { success: true, message: 'Email de cancelación enviado' };
     } catch (error) {
       console.error('Error sending cancellation email:', error);
@@ -265,9 +320,9 @@ export class NotificationsService {
             <p>Tu turno ha sido confirmado exitosamente.</p>
             
             <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #667eea;">
-              <h2 style="margin-top: 0; color: #667eea;">Detalles del Turno</h2>
-              <p><strong>Servicio:</strong> ${appointment.service.name}</p>
-              <p><strong>Profesional:</strong> ${appointment.professional.fullName}</p>
+              <h2 style="margin-top: 0; color: #667eea;">Detalles de la reserva</h2>
+              <p><strong>Espacio:</strong> ${appointment.service.name}</p>
+              ${appointment.professional ? `<p><strong>Recurso:</strong> ${appointment.professional.fullName}</p>` : ''}
               <p><strong>Fecha:</strong> ${formatDate(startDate)}</p>
               <p><strong>Hora:</strong> ${formatTime(startDate)} - ${formatTime(endDate)}</p>
               ${tenant?.phone ? `<p><strong>Teléfono:</strong> ${tenant.phone}</p>` : ''}
@@ -319,9 +374,9 @@ export class NotificationsService {
             <p>Te recordamos que tienes un turno programado para mañana:</p>
             
             <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #f5576c;">
-              <h2 style="margin-top: 0; color: #f5576c;">Detalles del Turno</h2>
-              <p><strong>Servicio:</strong> ${appointment.service.name}</p>
-              <p><strong>Profesional:</strong> ${appointment.professional.fullName}</p>
+              <h2 style="margin-top: 0; color: #f5576c;">Detalles de la reserva</h2>
+              <p><strong>Espacio:</strong> ${appointment.service.name}</p>
+              ${appointment.professional ? `<p><strong>Recurso:</strong> ${appointment.professional.fullName}</p>` : ''}
               <p><strong>Fecha:</strong> ${formatDate(startDate)}</p>
               <p><strong>Hora:</strong> ${formatTime(startDate)}</p>
             </div>
@@ -351,9 +406,9 @@ export class NotificationsService {
             <p>Lamentamos informarte que tu turno ha sido cancelado.</p>
             
             <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #fa709a;">
-              <h2 style="margin-top: 0; color: #fa709a;">Turno Cancelado</h2>
-              <p><strong>Servicio:</strong> ${appointment.service.name}</p>
-              <p><strong>Profesional:</strong> ${appointment.professional.fullName}</p>
+              <h2 style="margin-top: 0; color: #fa709a;">Reserva cancelada</h2>
+              <p><strong>Espacio:</strong> ${appointment.service.name}</p>
+              ${appointment.professional ? `<p><strong>Recurso:</strong> ${appointment.professional.fullName}</p>` : ''}
               ${reason ? `<p><strong>Motivo:</strong> ${reason}</p>` : ''}
             </div>
 

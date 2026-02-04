@@ -48,6 +48,11 @@ export class CreateTenantDto {
   @IsString()
   @IsOptional()
   locale?: string;
+
+  /** Contraseña del administrador (requerida al crear desde onboarding) */
+  @IsString()
+  @IsOptional()
+  password?: string;
 }
 
 

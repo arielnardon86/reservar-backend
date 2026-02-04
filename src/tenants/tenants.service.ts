@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TenantsService {
@@ -9,30 +10,34 @@ export class TenantsService {
 
   async create(createTenantDto: CreateTenantDto) {
     try {
-      console.log('📝 Creating tenant with data:', JSON.stringify(createTenantDto, null, 2));
-      
-      // Crear tenant y usuario admin en una transacción
+      const { password, ...tenantData } = createTenantDto;
+      if (!password || password.length < 8) {
+        throw new BadRequestException('La contraseña es obligatoria y debe tener al menos 8 caracteres');
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      console.log('📝 Creating tenant with data:', JSON.stringify(tenantData, null, 2));
+
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Crear tenant
         console.log('1️⃣ Creating tenant...');
         const tenant = await tx.tenant.create({
           data: {
-            ...createTenantDto,
-            primaryColor: createTenantDto.primaryColor || '#3b82f6',
-            timezone: createTenantDto.timezone || 'America/Argentina/Buenos_Aires',
-            locale: createTenantDto.locale || 'es-AR',
+            ...tenantData,
+            primaryColor: tenantData.primaryColor || '#3b82f6',
+            timezone: tenantData.timezone || 'America/Argentina/Buenos_Aires',
+            locale: tenantData.locale || 'es-AR',
           },
         });
         console.log('✅ Tenant created:', tenant.id);
 
-        // 2. Crear usuario admin automáticamente usando el email del tenant
-        console.log('2️⃣ Creating admin user...');
+        console.log('2️⃣ Creating admin user with password...');
         await tx.user.create({
           data: {
-            email: createTenantDto.email,
-            name: createTenantDto.name, // Usar el nombre del negocio como nombre del usuario
+            email: tenantData.email,
+            name: tenantData.name,
             tenantId: tenant.id,
             role: 'admin',
+            passwordHash,
           },
         });
         console.log('✅ Admin user created');

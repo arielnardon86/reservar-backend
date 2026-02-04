@@ -62,19 +62,21 @@ export class AppointmentsService {
         },
       });
 
-      // Verificar duplicados exactos PRIMERO (mismo cliente, mismo horario)
-      // Buscar turnos del mismo cliente en el mismo horario (ventana de 1 minuto)
+      const professionalIdOrNull = createAppointmentDto.professionalId ?? null;
+
+      // Verificar duplicados exactos (mismo cliente, mismo horario)
       const duplicateAppointment = await tx.appointment.findFirst({
         where: {
           tenantId,
           customerId: customer.id,
-          professionalId: createAppointmentDto.professionalId,
+          serviceId: createAppointmentDto.serviceId,
+          ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
           status: {
             not: AppointmentStatus.CANCELLED,
           },
           startTime: {
-            gte: new Date(startTime.getTime() - 60000), // 1 minuto antes
-            lte: new Date(startTime.getTime() + 60000), // 1 minuto después
+            gte: new Date(startTime.getTime() - 60000),
+            lte: new Date(startTime.getTime() + 60000),
           },
         },
       });
@@ -90,11 +92,12 @@ export class AppointmentsService {
         throw new ConflictException('Ya tienes un turno reservado en este horario. Por favor verifica tus turnos.');
       }
 
-      // Verificar conflictos de horario (turnos que se solapan con otros clientes)
+      // Verificar conflictos de horario (mismo espacio/recurso ya reservado)
       const conflicting = await tx.appointment.findFirst({
         where: {
           tenantId,
-          professionalId: createAppointmentDto.professionalId,
+          serviceId: createAppointmentDto.serviceId,
+          ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
           status: {
             not: AppointmentStatus.CANCELLED,
           },
@@ -148,7 +151,7 @@ export class AppointmentsService {
             tenantId,
             customerId: customer.id,
             serviceId: createAppointmentDto.serviceId,
-            professionalId: createAppointmentDto.professionalId,
+            professionalId: professionalIdOrNull,
             startTime,
             endTime,
             status: createAppointmentDto.status || AppointmentStatus.PENDING,
@@ -234,116 +237,95 @@ export class AppointmentsService {
       dayOfWeek: date.getUTCDay(),
     });
 
-    // Verificar que el profesional pertenezca al tenant
-    const professional = await this.prisma.professional.findFirst({
+    // Verificar que el espacio (service) pertenezca al tenant
+    const service = await this.prisma.service.findFirst({
       where: {
-        id: query.professionalId,
+        id: query.serviceId,
         tenantId,
+        isActive: true,
       },
     });
 
-    if (!professional) {
-      throw new NotFoundException('Professional not found');
+    if (!service) {
+      throw new NotFoundException('Espacio no encontrado');
     }
 
-    // Obtener horarios del profesional o globales del tenant
-    // getUTCDay() retorna 0 (Domingo) a 6 (Sábado) en UTC
     const dayOfWeek = date.getUTCDay();
-    
-    console.log('🔍 Searching schedules:', {
-      tenantId,
-      professionalId: query.professionalId,
-      dayOfWeek,
-    });
+    const bySpaceOnly = !query.professionalId;
 
-    // Buscar horarios específicos del profesional primero
-    const professionalSchedules = await this.prisma.schedule.findMany({
-      where: {
-        professionalId: query.professionalId,
-        dayOfWeek,
-        isException: false,
-      },
-    });
+    let schedules: { id: string; startTime: string; endTime: string; dayOfWeek: number; professionalId: string | null; serviceId: string | null; tenantId: string | null }[];
 
-    console.log('👤 Professional schedules found:', professionalSchedules.length);
-    if (professionalSchedules.length > 0) {
-      console.log('👤 Professional schedules details:', professionalSchedules.map(s => ({
-        id: s.id,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        dayOfWeek: s.dayOfWeek,
-      })));
+    if (bySpaceOnly) {
+      // Reservas de espacios comunes: horarios del espacio (serviceId)
+      const spaceSchedules = await this.prisma.schedule.findMany({
+        where: {
+          serviceId: query.serviceId,
+          dayOfWeek,
+          isException: false,
+        },
+      });
+      const globalSchedules = await this.prisma.schedule.findMany({
+        where: {
+          tenantId,
+          serviceId: null,
+          professionalId: null,
+          dayOfWeek,
+          isException: false,
+        },
+      });
+      schedules = spaceSchedules.length > 0 ? spaceSchedules : globalSchedules;
+    } else {
+      // Flujo con profesional/recurso
+      const professional = await this.prisma.professional.findFirst({
+        where: { id: query.professionalId, tenantId },
+      });
+      if (!professional) throw new NotFoundException('Recurso no encontrado');
+
+      const professionalSchedules = await this.prisma.schedule.findMany({
+        where: {
+          professionalId: query.professionalId,
+          dayOfWeek,
+          isException: false,
+        },
+      });
+      const globalSchedules = await this.prisma.schedule.findMany({
+        where: {
+          tenantId,
+          professionalId: null,
+          serviceId: null,
+          dayOfWeek,
+          isException: false,
+        },
+      });
+      schedules = professionalSchedules.length > 0 ? professionalSchedules : globalSchedules;
     }
 
-    // Buscar horarios globales del tenant
-    const globalSchedules = await this.prisma.schedule.findMany({
-      where: {
-        tenantId,
-        professionalId: null,
-        dayOfWeek,
-        isException: false,
-      },
-    });
-
-    console.log('🌐 Global schedules found:', globalSchedules.length);
-    if (globalSchedules.length > 0) {
-      console.log('🌐 Global schedules details:', globalSchedules.map(s => ({
-        id: s.id,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        dayOfWeek: s.dayOfWeek,
-      })));
-    }
-
-    // Combinar ambos tipos de horarios
-    // Si hay horarios específicos del profesional, usar solo esos
-    // Si no, usar los horarios globales
-    const schedules = professionalSchedules.length > 0 
-      ? professionalSchedules 
-      : globalSchedules;
-
-    // Debug: Log para verificar qué horarios se encontraron
-    console.log('🔍 Availability Debug:', {
+    console.log('🔍 Availability:', {
       tenantId,
-      professionalId: query.professionalId,
-      date: query.date,
-      dayOfWeek,
+      serviceId: query.serviceId,
+      bySpaceOnly,
       schedulesFound: schedules.length,
-      professionalSchedulesCount: professionalSchedules.length,
-      globalSchedulesCount: globalSchedules.length,
-      usingProfessionalSchedules: professionalSchedules.length > 0,
-      schedules: schedules.map(s => ({
-        id: s.id,
-        professionalId: s.professionalId,
-        tenantId: s.tenantId,
-        dayOfWeek: s.dayOfWeek,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        isException: s.isException,
-      })),
     });
 
     if (schedules.length === 0) {
       return []; // No hay horarios configurados
     }
 
-    // Obtener appointments existentes (incluyendo PENDING, CONFIRMED, COMPLETED)
-    // Excluir solo CANCELLED y NO_SHOW
+    const appointmentsWhere: any = {
+      tenantId,
+      serviceId: query.serviceId,
+      startTime: { gte: startOfDay, lte: endOfDay },
+      status: { notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW] },
+    };
+    if (bySpaceOnly) {
+      appointmentsWhere.professionalId = null;
+    } else {
+      appointmentsWhere.professionalId = query.professionalId;
+    }
+
     const appointments = await this.prisma.appointment.findMany({
-      where: {
-        tenantId,
-        professionalId: query.professionalId,
-        startTime: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
-        status: {
-          notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW],
-        },
-      },
-      orderBy: {
-        startTime: 'asc',
-      },
+      where: appointmentsWhere,
+      orderBy: { startTime: 'asc' },
     });
     
     console.log(`📅 Found ${appointments.length} existing appointments for ${query.date}:`, 
@@ -357,9 +339,7 @@ export class AppointmentsService {
 
     // Generar slots disponibles
     const slots: { time: string; available: boolean }[] = [];
-    const serviceDuration = query.serviceId
-      ? (await this.prisma.service.findUnique({ where: { id: query.serviceId } }))?.duration || 30
-      : 30;
+    const serviceDuration = service.duration || 30;
 
     console.log('⏱️ Service duration:', serviceDuration, 'minutes');
     console.log('📅 Existing appointments:', appointments.length);
@@ -518,6 +498,7 @@ export class AppointmentsService {
       },
       select: {
         id: true,
+        serviceId: true,
         professionalId: true,
         startTime: true,
         endTime: true,

@@ -8,7 +8,7 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
-    return this.authService.sendMagicLink(loginDto);
+    return this.authService.loginWithPassword(loginDto);
   }
 
   @Get('callback')

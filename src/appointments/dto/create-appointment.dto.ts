@@ -19,14 +19,15 @@ export class CreateAppointmentDto {
   @IsOptional()
   customerPhone?: string;
 
-  // Datos del turno
+  // Datos de la reserva: espacio común (serviceId) es obligatorio
   @IsString()
   @IsNotEmpty()
   serviceId: string;
 
+  // Opcional: para edificios/condominios solo se usa serviceId (espacio)
   @IsString()
-  @IsNotEmpty()
-  professionalId: string;
+  @IsOptional()
+  professionalId?: string;
 
   @IsDateString()
   @IsNotEmpty()

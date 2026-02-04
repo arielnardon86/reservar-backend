@@ -10,16 +10,16 @@ datasource db {
 }
 
 // ============================================
-// TENANT (Multi-tenancy)
+// TENANT (Multi-tenancy) - Edificio / Condominio
 // ============================================
 
 model Tenant {
   id          String   @id @default(uuid())
-  slug        String   @unique // URL slug (ej: "dr-mendoza")
-  name        String   // Nombre del negocio
-  email       String   // Email de contacto
+  slug        String   @unique // URL slug (ej: "torre-pacifico")
+  name        String   // Nombre del edificio/condominio
+  email       String   // Email de contacto (administración)
   phone       String?  // Teléfono opcional
-  address     String?  // Dirección física del negocio
+  address     String?  // Dirección del edificio
   latitude    Float?   // Latitud de la ubicación
   longitude   Float?   // Longitud de la ubicación
   
@@ -63,6 +63,7 @@ model User {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
   // Auth
+  passwordHash   String?   @db.Text // Contraseña hasheada (login email + contraseña)
   emailVerified DateTime?
   magicLinkToken String?  @db.Text
   magicLinkExpires DateTime?
@@ -81,7 +82,7 @@ model User {
 }
 
 // ============================================
-// SERVICES (Servicios ofrecidos)
+// SERVICES = Espacios comunes (SUM, Gimnasio, Parrilla, etc.)
 // ============================================
 
 model Service {
@@ -89,19 +90,22 @@ model Service {
   tenantId    String
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
-  name        String   // Nombre del servicio
+  name        String   // Nombre del espacio (SUM, Gimnasio, Parrilla 1, etc.)
   description String?  @db.Text
-  duration    Int      // Duración en minutos (30, 45, 60, etc.)
-  price       Decimal? @db.Decimal(10, 2) // Precio opcional
+  duration    Int      // Duración por defecto del slot en minutos (60, 120, etc.)
+  price       Decimal? @db.Decimal(10, 2) // Precio opcional (si el consorcio cobra)
   
   // Estado
   isActive    Boolean  @default(true)
   
-  // Relación con profesionales
+  // Relación con profesionales (opcional: para compatibilidad)
   professionals ProfessionalService[]
   
   // Relación con appointments
   appointments Appointment[]
+  
+  // Horarios específicos del espacio
+  schedules   Schedule[]
   
   // Metadata
   createdAt   DateTime @default(now())
@@ -171,7 +175,7 @@ model ProfessionalService {
 }
 
 // ============================================
-// SCHEDULES (Horarios)
+// SCHEDULES (Horarios) - por espacio común o por profesional
 // ============================================
 
 model Schedule {
@@ -179,25 +183,30 @@ model Schedule {
   tenantId       String?
   tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
-  professionalId String?  // Si es null, es horario global del tenant
+  // Horario por espacio común (espacios de edificios/condominios)
+  serviceId      String?
+  service        Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  professionalId String?  // Si es null y serviceId null, es horario global del tenant
   professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
   
   dayOfWeek      Int      // 0-6 (Domingo-Sábado)
   startTime      String   // "09:00" (HH:mm format)
   endTime        String   // "18:00" (HH:mm format)
   
-  // Pausas (almuerzo, descanso) - JSON opcional
+  // Pausas - JSON opcional
   breaks         Json?    // [{start: "13:00", end: "14:00"}]
   
   // Excepciones (feriados, cierres)
-  isException    Boolean  @default(false) // Si es true, este día está cerrado
-  exceptionDate  DateTime? // Para días específicos (no recurrentes)
+  isException    Boolean  @default(false)
+  exceptionDate  DateTime?
   
   // Metadata
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   
   @@index([tenantId])
+  @@index([serviceId])
   @@index([professionalId])
   @@index([tenantId, dayOfWeek])
   @@map("schedules")
@@ -246,12 +255,12 @@ model Appointment {
   customerId     String
   customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   
-  // Servicio y profesional
+  // Espacio común (service) y opcionalmente profesional/recurso
   serviceId      String
   service        Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   
-  professionalId String
-  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  professionalId String?  // Opcional: reservas de espacios comunes solo usan serviceId
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
   
   // Fecha y hora
   startTime      DateTime // Inicio del turno

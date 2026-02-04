@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoginDto } from './dto/login.dto';
 import { randomBytes } from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -11,8 +12,42 @@ export class AuthService {
     private notificationsService: NotificationsService,
   ) {}
 
-  async sendMagicLink(loginDto: LoginDto) {
-    // Buscar usuario por email
+  /** Login con email y contraseña (administradores) */
+  async loginWithPassword(loginDto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: loginDto.email },
+      include: { tenant: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Email o contraseña incorrectos');
+    }
+    if (!user.passwordHash) {
+      throw new UnauthorizedException('Este usuario no tiene contraseña configurada. Contactá al administrador.');
+    }
+    const valid = await bcrypt.compare(loginDto.password, user.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException('Email o contraseña incorrectos');
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        tenantId: user.tenantId,
+        tenant: user.tenant ? {
+          id: user.tenant.id,
+          name: user.tenant.name,
+          slug: user.tenant.slug,
+        } : null,
+      },
+    };
+  }
+
+  async sendMagicLink(loginDto: { email: string }) {
     const user = await this.prisma.user.findUnique({
       where: { email: loginDto.email },
     });
