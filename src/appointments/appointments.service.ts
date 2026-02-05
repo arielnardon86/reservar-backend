@@ -156,6 +156,8 @@ export class AppointmentsService {
             endTime,
             status: createAppointmentDto.status || AppointmentStatus.PENDING,
             notes: createAppointmentDto.notes,
+            departamento: createAppointmentDto.departamento,
+            piso: createAppointmentDto.piso,
           },
           include: {
             customer: true,

@@ -40,5 +40,14 @@ export class CreateAppointmentDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  // Datos del departamento (edificios/condominios)
+  @IsString()
+  @IsOptional()
+  departamento?: string;
+
+  @IsString()
+  @IsOptional()
+  piso?: string;
 }
 

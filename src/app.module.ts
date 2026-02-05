@@ -9,6 +9,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { CustomersModule } from './customers/customers.module';
 import { AuthModule } from './auth/auth.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { OnboardingTokensModule } from './onboarding-tokens/onboarding-tokens.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 
 @Module({
@@ -25,6 +26,7 @@ import { TenantMiddleware } from './common/middleware/tenant.middleware';
     CustomersModule,
     AuthModule,
     NotificationsModule,
+    OnboardingTokensModule,
   ],
 })
 export class AppModule implements NestModule {

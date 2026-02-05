@@ -1,16 +1,28 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { OnboardingTokensService } from '../onboarding-tokens/onboarding-tokens.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TenantsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private onboardingTokensService: OnboardingTokensService,
+  ) {}
 
   async create(createTenantDto: CreateTenantDto) {
     try {
-      const { password, ...tenantData } = createTenantDto;
+      const { password, inviteToken, ...tenantData } = createTenantDto;
+
+      // Si hay inviteToken, validar que sea válido y no usado
+      if (inviteToken) {
+        const { valid } = await this.onboardingTokensService.validate(inviteToken);
+        if (!valid) {
+          throw new BadRequestException('El link de suscripción no es válido o ya fue utilizado');
+        }
+      }
       if (!password || password.length < 8) {
         throw new BadRequestException('La contraseña es obligatoria y debe tener al menos 8 caracteres');
       }
@@ -41,6 +53,12 @@ export class TenantsService {
           },
         });
         console.log('✅ Admin user created');
+
+        // Marcar token como usado (si se proporcionó)
+        if (inviteToken) {
+          await this.onboardingTokensService.markAsUsed(inviteToken, tenant.id);
+          console.log('✅ Onboarding token marked as used');
+        }
 
         return tenant;
       });

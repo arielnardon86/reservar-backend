@@ -53,6 +53,11 @@ export class CreateTenantDto {
   @IsString()
   @IsOptional()
   password?: string;
+
+  /** Token de invitación (obligatorio si se usa el flujo de suscripción) */
+  @IsString()
+  @IsOptional()
+  inviteToken?: string;
 }
 
 
