@@ -196,6 +196,17 @@ export class AppointmentsService {
   async getAvailability(tenantId: string, query: AvailabilityQueryDto) {
     console.log('🔍 getAvailability called with:', { tenantId, query });
 
+    try {
+      return await this.getAvailabilityInternal(tenantId, query);
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      console.error('❌ getAvailability error:', err);
+      console.error('❌ getAvailability stack:', err instanceof Error ? err.stack : '');
+      return [];
+    }
+  }
+
+  private async getAvailabilityInternal(tenantId: string, query: AvailabilityQueryDto) {
     // Parsear fecha correctamente (formato ISO: 'YYYY-MM-DD')
     if (!query.date) {
       throw new Error('Date is required');
@@ -346,10 +357,26 @@ export class AppointmentsService {
     console.log('⏱️ Service duration:', serviceDuration, 'minutes');
     console.log('📅 Existing appointments:', appointments.length);
 
+    // Helper: parse "HH:mm" o "HH:mm:ss" -> [hour, minute] o null si inválido
+    const parseTime = (s: string): [number, number] | null => {
+      if (typeof s !== 'string' || !s.trim()) return null;
+      const parts = s.trim().split(':').map(Number);
+      if (parts.length < 2 || parts.some(n => isNaN(n))) return null;
+      const [h, m] = parts;
+      if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return [h, m];
+    };
+
     // Por cada schedule, generar slots
     for (const schedule of schedules) {
-      const [startHour, startMinute] = schedule.startTime.split(':').map(Number);
-      const [endHour, endMinute] = schedule.endTime.split(':').map(Number);
+      const startParsed = parseTime(schedule?.startTime);
+      const endParsed = parseTime(schedule?.endTime);
+      if (!startParsed || !endParsed) {
+        console.warn('⚠️ Invalid schedule times, skipping:', { id: schedule?.id, startTime: schedule?.startTime, endTime: schedule?.endTime });
+        continue;
+      }
+      const [startHour, startMinute] = startParsed;
+      const [endHour, endMinute] = endParsed;
 
       // Crear fechas en UTC para evitar problemas de timezone
       const scheduleStart = new Date(Date.UTC(

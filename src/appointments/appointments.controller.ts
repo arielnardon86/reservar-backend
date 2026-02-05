@@ -57,7 +57,9 @@ export class AppointmentsController {
     } catch (error) {
       console.error('❌ Error in getAvailability:', error);
       console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
-      throw error;
+      if (error instanceof NotFoundException) throw error;
+      // Evitar 500: devolver [] para que el frontend no rompa
+      return [];
     }
   }
 
