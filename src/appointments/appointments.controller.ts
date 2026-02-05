@@ -69,15 +69,21 @@ export class AppointmentsController {
     @Query('tenantSlug') tenantSlug: string,
     @Query('date') date: string,
   ) {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { slug: tenantSlug },
-    });
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { slug: tenantSlug },
+      });
 
-    if (!tenant) {
-      throw new NotFoundException('Tenant not found');
+      if (!tenant) {
+        throw new NotFoundException('Tenant not found');
+      }
+
+      return this.appointmentsService.getDayAppointments(tenant.id, date);
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      console.error('❌ Error in getDayAppointments:', error);
+      return [];
     }
-
-    return this.appointmentsService.getDayAppointments(tenant.id, date);
   }
 
   // Público: Crear appointment (cliente reserva turno)
