@@ -33,6 +33,9 @@ model Tenant {
   timezone    String   @default("America/Argentina/Buenos_Aires")
   locale      String   @default("es-AR")
   
+  // Estado
+  isActive    Boolean  @default(true) // Para inactivar edificios sin eliminarlos
+  
   // Metadata
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -70,6 +73,7 @@ model User {
   
   // Roles (si hay múltiples roles por tenant)
   role        String   @default("admin") // admin, manager, etc.
+  isSuperAdmin Boolean  @default(false) // Super administrador del sistema (puede gestionar todos los tenants)
   
   // Metadata
   createdAt   DateTime @default(now())

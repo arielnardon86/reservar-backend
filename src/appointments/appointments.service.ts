@@ -379,19 +379,28 @@ export class AppointmentsService {
       const [endHour, endMinute] = endParsed;
 
       // Crear fechas en UTC para evitar problemas de timezone
+      const baseYear = parseInt(dateParts[0]);
+      const baseMonth = parseInt(dateParts[1]) - 1;
+      const baseDay = parseInt(dateParts[2]);
+
       const scheduleStart = new Date(Date.UTC(
-        parseInt(dateParts[0]),
-        parseInt(dateParts[1]) - 1,
-        parseInt(dateParts[2]),
+        baseYear,
+        baseMonth,
+        baseDay,
         startHour,
         startMinute,
         0,
         0
       ));
+
+      // Si el horario de cierre es menor o igual al de apertura, interpretamos
+      // que cruza la medianoche y termina al día siguiente (ej: 20:00 -> 01:30)
+      const endDayOffset = (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) ? 1 : 0;
+
       const scheduleEnd = new Date(Date.UTC(
-        parseInt(dateParts[0]),
-        parseInt(dateParts[1]) - 1,
-        parseInt(dateParts[2]),
+        baseYear,
+        baseMonth,
+        baseDay + endDayOffset,
         endHour,
         endMinute,
         0,

@@ -110,6 +110,7 @@ export class TenantsService {
         fontFamily: true,
         timezone: true,
         locale: true,
+        isActive: true,
       },
     });
 
@@ -117,7 +118,14 @@ export class TenantsService {
       throw new NotFoundException(`Tenant with slug "${slug}" not found`);
     }
 
-    return tenant;
+    // Los tenants inactivos no deben ser accesibles públicamente
+    if (!tenant.isActive) {
+      throw new NotFoundException(`Tenant with slug "${slug}" not found`);
+    }
+
+    // No devolver isActive en la respuesta pública
+    const { isActive, ...publicTenant } = tenant;
+    return publicTenant;
   }
 
   async findOne(id: string) {

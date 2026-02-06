@@ -21,7 +21,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "create-super-admin": "ts-node scripts/create-super-admin.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
