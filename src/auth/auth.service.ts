@@ -151,12 +151,12 @@ export class AuthService {
       isSuperAdmin: user.isSuperAdmin || false,
     };
 
-    const token = this.jwtService.sign(payload, {
+    const jwtToken = this.jwtService.sign(payload, {
       expiresIn: this.configService.get<string>('JWT_EXPIRATION') || '7d',
     });
 
     return {
-      access_token: token,
+      access_token: jwtToken,
       user: {
         id: user.id,
         email: user.email,
