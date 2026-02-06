@@ -1,0 +1,344 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// TENANT (Multi-tenancy) - Edificio / Condominio
+// ============================================
+
+model Tenant {
+  id          String   @id @default(uuid())
+  slug        String   @unique // URL slug (ej: "torre-pacifico")
+  name        String   // Nombre del edificio/condominio
+  email       String   // Email de contacto (administración)
+  phone       String?  // Teléfono opcional
+  address     String?  // Dirección del edificio
+  latitude    Float?   // Latitud de la ubicación
+  longitude   Float?   // Longitud de la ubicación
+  
+  // Branding
+  logoUrl     String?  // URL del logo
+  primaryColor String  @default("#3b82f6") // Color primario
+  secondaryColor String? // Color secundario
+  fontFamily   String?  // Tipografía (opcional)
+  
+  // Configuración
+  timezone    String   @default("America/Argentina/Buenos_Aires")
+  locale      String   @default("es-AR")
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  users       User[]
+  services    Service[]
+  professionals Professional[]
+  schedules   Schedule[]
+  appointments Appointment[]
+  customers   Customer[]
+  
+  @@index([slug])
+  @@map("tenants")
+}
+
+// ============================================
+// USERS (Administradores)
+// ============================================
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  name        String?
+  
+  // Tenant relation
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Auth
+  passwordHash   String?   @db.Text // Contraseña hasheada (login email + contraseña)
+  emailVerified DateTime?
+  magicLinkToken String?  @db.Text
+  magicLinkExpires DateTime?
+  
+  // Roles (si hay múltiples roles por tenant)
+  role        String   @default("admin") // admin, manager, etc.
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastLoginAt DateTime?
+  
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+// ============================================
+// SERVICES = Espacios comunes (SUM, Gimnasio, Parrilla, etc.)
+// ============================================
+
+model Service {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  name        String   // Nombre del espacio (SUM, Gimnasio, Parrilla 1, etc.)
+  description String?  @db.Text
+  duration    Int      // Duración por defecto del slot en minutos (60, 120, etc.)
+  price       Decimal? @db.Decimal(10, 2) // Precio opcional (si el consorcio cobra)
+  
+  // Estado
+  isActive    Boolean  @default(true)
+  
+  // Relación con profesionales (opcional: para compatibilidad)
+  professionals ProfessionalService[]
+  
+  // Relación con appointments
+  appointments Appointment[]
+  
+  // Horarios específicos del espacio
+  schedules   Schedule[]
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("services")
+}
+
+// ============================================
+// PROFESSIONALS (Profesionales)
+// ============================================
+
+model Professional {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  firstName   String
+  lastName    String
+  fullName    String   // Calculado o almacenado
+  email       String?
+  phone       String?
+  photoUrl    String?  // URL de foto
+  bio         String?  @db.Text // Descripción/especialidad
+  
+  // Estado
+  isActive    Boolean  @default(true)
+  
+  // Relación con servicios
+  services    ProfessionalService[]
+  
+  // Horarios específicos del profesional
+  schedules   Schedule[]
+  
+  // Appointments del profesional
+  appointments Appointment[]
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("professionals")
+}
+
+// ============================================
+// PROFESSIONAL-SERVICE (Many-to-Many)
+// ============================================
+
+model ProfessionalService {
+  id             String   @id @default(uuid())
+  professionalId String
+  serviceId      String
+  
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  createdAt      DateTime @default(now())
+  
+  @@unique([professionalId, serviceId])
+  @@index([professionalId])
+  @@index([serviceId])
+  @@map("professional_services")
+}
+
+// ============================================
+// SCHEDULES (Horarios) - por espacio común o por profesional
+// ============================================
+
+model Schedule {
+  id             String   @id @default(uuid())
+  tenantId       String?
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Horario por espacio común (espacios de edificios/condominios)
+  serviceId      String?
+  service        Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  professionalId String?  // Si es null y serviceId null, es horario global del tenant
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  
+  dayOfWeek      Int      // 0-6 (Domingo-Sábado)
+  startTime      String   // "09:00" (HH:mm format)
+  endTime        String   // "18:00" (HH:mm format)
+  
+  // Pausas - JSON opcional
+  breaks         Json?    // [{start: "13:00", end: "14:00"}]
+  
+  // Excepciones (feriados, cierres)
+  isException    Boolean  @default(false)
+  exceptionDate  DateTime?
+  
+  // Metadata
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([serviceId])
+  @@index([professionalId])
+  @@index([tenantId, dayOfWeek])
+  @@map("schedules")
+}
+
+// ============================================
+// CUSTOMERS (Clientes)
+// ============================================
+
+model Customer {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  firstName   String
+  lastName    String
+  email       String   // Email único por tenant (no globalmente)
+  phone       String?
+  
+  // Metadata adicional (opcional)
+  notes       String?  @db.Text
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  appointments Appointment[]
+  
+  @@unique([tenantId, email]) // Email único por tenant
+  @@index([tenantId])
+  @@index([tenantId, email])
+  @@map("customers")
+}
+
+// ============================================
+// APPOINTMENTS (Turnos)
+// ============================================
+
+model Appointment {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Cliente
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Espacio común (service) y opcionalmente profesional/recurso
+  serviceId      String
+  service        Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  
+  professionalId String?  // Opcional: reservas de espacios comunes solo usan serviceId
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  
+  // Fecha y hora
+  startTime      DateTime // Inicio del turno
+  endTime        DateTime // Fin calculado (startTime + service.duration)
+  
+  // Estado
+  status         AppointmentStatus @default(PENDING)
+  
+  // Confirmación
+  isConfirmed    Boolean  @default(false)
+  confirmedAt    DateTime?
+  
+  // Cancelación
+  cancelledAt    DateTime?
+  cancellationReason String? @db.Text
+  cancelledBy   String?   // "customer" | "admin" | "system"
+  
+  // Notificaciones
+  reminderSentAt DateTime?
+  confirmationSentAt DateTime?
+  
+  // Metadata
+  notes          String?  @db.Text // Notas internas del admin
+  
+  // Datos del departamento (edificios/condominios)
+  departamento   String?  // Número o letra del depto (ej: 3B)
+  piso           String?  // Piso (ej: 2)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([tenantId, startTime])
+  @@index([tenantId, status])
+  @@index([tenantId, professionalId, startTime])
+  @@index([customerId])
+  @@index([startTime]) // Para queries de disponibilidad
+  @@map("appointments")
+}
+
+enum AppointmentStatus {
+  PENDING    // Pendiente de confirmación
+  CONFIRMED  // Confirmado
+  CANCELLED  // Cancelado
+  COMPLETED  // Completado
+  NO_SHOW    // No asistió
+}
+
+// ============================================
+// ONBOARDING_TOKENS (Links de suscripción - un solo uso)
+// ============================================
+
+model OnboardingToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  usedAt    DateTime?
+  tenantId  String?
+  createdAt DateTime  @default(now())
+  
+  @@index([token])
+  @@index([usedAt])
+  @@map("onboarding_tokens")
+}
+
+// ============================================
+// MAGIC_LINK_TOKENS (Tokens temporales)
+// ============================================
+
+model MagicLinkToken {
+  id         String   @id @default(uuid())
+  email      String
+  token      String   @unique
+  expiresAt  DateTime
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  
+  @@index([token])
+  @@index([email, expiresAt])
+  @@map("magic_link_tokens")
+}
+

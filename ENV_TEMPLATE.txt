@@ -1,0 +1,24 @@
+# Copia este contenido a un archivo llamado .env en la raíz del backend
+
+# Database
+DATABASE_URL="postgresql://postgres:Maro1905,.10@db.xijcnkdwrkfyajyyuwqe.supabase.co:5432/postgres?schema=public"
+
+# JWT
+JWT_SECRET=super-secret-jwt-key-change-this-in-production-12345
+JWT_EXPIRATION=7d
+MAGIC_LINK_EXPIRATION=15m
+
+# App
+NODE_ENV=development
+PORT=3001
+FRONTEND_URL=http://localhost:3000
+
+# Email (opcional por ahora)
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+
+# Redis (opcional por ahora)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+
