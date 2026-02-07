@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class SuperAdminService {
@@ -165,6 +167,49 @@ export class SuperAdminService {
         customers: tenant._count.customers,
         services: tenant._count.services,
       },
+    };
+  }
+
+  /**
+   * Blanquear claves: resetear contraseñas de todos los usuarios de un tenant
+   * Genera nuevas contraseñas aleatorias y las retorna
+   */
+  async resetTenantPasswords(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        users: {
+          where: { isSuperAdmin: false },
+          select: { id: true, email: true, name: true },
+        },
+      },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(`Tenant con ID ${tenantId} no encontrado`);
+    }
+
+    const results: Array<{ email: string; name?: string; newPassword: string }> = [];
+
+    for (const user of tenant.users) {
+      const newPassword = randomBytes(8).toString('hex');
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      });
+
+      results.push({
+        email: user.email,
+        name: user.name || undefined,
+        newPassword,
+      });
+    }
+
+    return {
+      message: `Se resetearon ${results.length} contraseña(s) del tenant "${tenant.name}"`,
+      resetUsers: results,
     };
   }
 

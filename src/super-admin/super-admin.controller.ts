@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Delete,
-  UseGuards,
-  Query,
-  Body,
-} from '@nestjs/common';
+import { Controller, Get, Param, Patch, Delete, Post, UseGuards } from '@nestjs/common';
 import { SuperAdminService } from './super-admin.service';
 import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 
@@ -67,6 +58,15 @@ export class SuperAdminController {
       message: `Tenant "${tenant.name}" activado exitosamente`,
       tenant,
     };
+  }
+
+  /**
+   * Blanquear claves de usuarios del tenant
+   * POST /super-admin/tenants/:id/reset-passwords
+   */
+  @Post('tenants/:id/reset-passwords')
+  async resetTenantPasswords(@Param('id') id: string) {
+    return this.superAdminService.resetTenantPasswords(id);
   }
 
   /**
