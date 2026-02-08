@@ -418,10 +418,11 @@ export class AppointmentsService {
       return [h, m];
     };
 
-    // Paso del slot en minutos (cada 30 min o la duración del espacio)
-    const slotStepMinutes = Math.max(serviceDuration, 30);
+    // Paso fijo de 30 min para que el frontend reciba todos los segmentos (11:00, 11:30, 12:00, …)
+    // y pueda pintar bien los bloques y permitir reserva dentro de un turno ya empezado
+    const slotStepMinutes = 30;
 
-    // Por cada schedule, generar slots en hora local literal (sin depender de Intl para el output)
+    // Por cada schedule, generar slots en hora local literal cada 30 min
     for (const schedule of schedules) {
       const startParsed = parseTime(schedule?.startTime);
       const endParsed = parseTime(schedule?.endTime);
@@ -432,7 +433,6 @@ export class AppointmentsService {
       let [curHour, curMin] = startParsed;
       const [endHour, endMin] = endParsed;
 
-      // Fin del turno en minutos desde medianoche (puede ser día siguiente)
       const endMinutes = endHour * 60 + endMin + (endHour < startParsed[0] || (endHour === startParsed[0] && endMin <= startParsed[1]) ? 24 * 60 : 0);
       let curMinutes = curHour * 60 + curMin;
 
@@ -441,15 +441,10 @@ export class AppointmentsService {
       let slotsGenerated = 0;
 
       while (curMinutes < endMinutes) {
-        const slotEndMinutes = curMinutes + serviceDuration;
-        if (slotEndMinutes > endMinutes) break;
-
-        // Hora local literal tal como está configurada (11:00, 11:30, 16:00, etc.)
         const h = Math.floor((curMinutes % (24 * 60)) / 60);
         const m = curMinutes % 60;
         const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-        // Para conflicto e isPast: convertir este instante (fecha + hora) en TZ del tenant a UTC
         const curDayOffset = curMinutes >= 24 * 60 ? 1 : 0;
         const slotStartUtc = localToUTC(baseYear, baseMonth, baseDay + curDayOffset, h, m, timeZone);
         const slotEndUtc = new Date(slotStartUtc.getTime() + serviceDuration * 60 * 1000);
@@ -464,9 +459,9 @@ export class AppointmentsService {
           );
         });
 
-        // Solo se considera pasado si el INICIO del slot es anterior a ahora (permite reservar dentro del turno ya empezado)
+        // Pasado solo si el FIN del bloque (inicio + duración) es anterior a ahora → permite reservar dentro del turno ya empezado
         const now = new Date();
-        const isPast = slotStartUtc.getTime() < now.getTime();
+        const isPast = slotEndUtc.getTime() < now.getTime();
 
         const available = !hasConflict && !isPast;
 
