@@ -441,6 +441,7 @@ export class AppointmentsService {
       let slotsGenerated = 0;
 
       while (curMinutes < endMinutes) {
+        // Hora local literal del edificio (11:00, 11:30, 16:00…) — no UTC, para que el frontend muestre lo configurado
         const h = Math.floor((curMinutes % (24 * 60)) / 60);
         const m = curMinutes % 60;
         const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
