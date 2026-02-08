@@ -33,6 +33,11 @@ export class CreateAppointmentDto {
   @IsNotEmpty()
   startTime: string; // ISO string
 
+  /** Opcional: si se envía (ej. reserva dentro de turno ya empezado), se usa en lugar de startTime + duración del espacio */
+  @IsDateString()
+  @IsOptional()
+  endTime?: string; // ISO string
+
   @IsEnum(AppointmentStatus)
   @IsOptional()
   status?: AppointmentStatus;

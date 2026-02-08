@@ -85,9 +85,17 @@ export class AppointmentsService {
         console.log('✅ Service found:', { id: service.id, duration: service.duration });
 
         const startTime = new Date(createAppointmentDto.startTime);
-        const endTime = new Date(startTime);
-        endTime.setMinutes(endTime.getMinutes() + service.duration);
-        
+        let endTime: Date;
+        if (createAppointmentDto.endTime) {
+          endTime = new Date(createAppointmentDto.endTime);
+          if (endTime.getTime() <= startTime.getTime()) {
+            throw new ConflictException('La hora de fin debe ser posterior a la hora de inicio');
+          }
+        } else {
+          endTime = new Date(startTime);
+          endTime.setMinutes(endTime.getMinutes() + service.duration);
+        }
+
         console.log('⏰ Calculated times:', {
           startTime: startTime.toISOString(),
           endTime: endTime.toISOString(),
@@ -410,7 +418,10 @@ export class AppointmentsService {
       return [h, m];
     };
 
-    // Por cada schedule, generar slots (horarios interpretados en la zona del tenant)
+    // Paso del slot en minutos (cada 30 min o la duración del espacio)
+    const slotStepMinutes = Math.max(serviceDuration, 30);
+
+    // Por cada schedule, generar slots en hora local literal (sin depender de Intl para el output)
     for (const schedule of schedules) {
       const startParsed = parseTime(schedule?.startTime);
       const endParsed = parseTime(schedule?.endTime);
@@ -418,50 +429,44 @@ export class AppointmentsService {
         console.warn('⚠️ Invalid schedule times, skipping:', { id: schedule?.id, startTime: schedule?.startTime, endTime: schedule?.endTime });
         continue;
       }
-      const [startHour, startMinute] = startParsed;
-      const [endHour, endMinute] = endParsed;
+      let [curHour, curMin] = startParsed;
+      const [endHour, endMin] = endParsed;
 
-      // Crear inicio/fin del turno en la zona del tenant y convertir a UTC
-      const scheduleStart = localToUTC(baseYear, baseMonth, baseDay, startHour, startMinute, timeZone);
+      // Fin del turno en minutos desde medianoche (puede ser día siguiente)
+      const endMinutes = endHour * 60 + endMin + (endHour < startParsed[0] || (endHour === startParsed[0] && endMin <= startParsed[1]) ? 24 * 60 : 0);
+      let curMinutes = curHour * 60 + curMin;
 
-      const endDayOffset = (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) ? 1 : 0;
-      const scheduleEnd = localToUTC(
-        baseYear,
-        baseMonth,
-        baseDay + endDayOffset,
-        endHour,
-        endMinute,
-        timeZone
-      );
+      console.log(`📋 Processing schedule: ${schedule.startTime} - ${schedule.endTime} (local)`);
 
-      console.log(`📋 Processing schedule: ${schedule.startTime} - ${schedule.endTime} (${timeZone})`);
-      console.log(`   Schedule start UTC: ${scheduleStart.toISOString()}`);
-      console.log(`   Schedule end UTC: ${scheduleEnd.toISOString()}`);
-
-      const slotStepMs = Math.max(serviceDuration, 30) * 60 * 1000;
-      let currentTime = new Date(scheduleStart.getTime());
       let slotsGenerated = 0;
 
-      while (currentTime < scheduleEnd) {
-        const slotEnd = new Date(currentTime.getTime() + serviceDuration * 60 * 1000);
+      while (curMinutes < endMinutes) {
+        const slotEndMinutes = curMinutes + serviceDuration;
+        if (slotEndMinutes > endMinutes) break;
 
-        if (slotEnd > scheduleEnd) break;
+        // Hora local literal tal como está configurada (11:00, 11:30, 16:00, etc.)
+        const h = Math.floor((curMinutes % (24 * 60)) / 60);
+        const m = curMinutes % 60;
+        const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-        // Devolver la hora en la zona del tenant para que el vecino vea 11:00, 16:00, etc.
-        const timeString = utcToLocalTimeString(currentTime, timeZone);
+        // Para conflicto e isPast: convertir este instante (fecha + hora) en TZ del tenant a UTC
+        const curDayOffset = curMinutes >= 24 * 60 ? 1 : 0;
+        const slotStartUtc = localToUTC(baseYear, baseMonth, baseDay + curDayOffset, h, m, timeZone);
+        const slotEndUtc = new Date(slotStartUtc.getTime() + serviceDuration * 60 * 1000);
 
         const hasConflict = appointments.some(apt => {
           const aptStart = new Date(apt.startTime);
           const aptEnd = new Date(apt.endTime);
           return (
-            (currentTime.getTime() >= aptStart.getTime() && currentTime.getTime() < aptEnd.getTime()) ||
-            (slotEnd.getTime() > aptStart.getTime() && slotEnd.getTime() <= aptEnd.getTime()) ||
-            (currentTime.getTime() <= aptStart.getTime() && slotEnd.getTime() >= aptEnd.getTime())
+            (slotStartUtc.getTime() >= aptStart.getTime() && slotStartUtc.getTime() < aptEnd.getTime()) ||
+            (slotEndUtc.getTime() > aptStart.getTime() && slotEndUtc.getTime() <= aptEnd.getTime()) ||
+            (slotStartUtc.getTime() <= aptStart.getTime() && slotEndUtc.getTime() >= aptEnd.getTime())
           );
         });
 
+        // Solo se considera pasado si el INICIO del slot es anterior a ahora (permite reservar dentro del turno ya empezado)
         const now = new Date();
-        const isPast = currentTime.getTime() < now.getTime();
+        const isPast = slotStartUtc.getTime() < now.getTime();
 
         const available = !hasConflict && !isPast;
 
@@ -475,7 +480,7 @@ export class AppointmentsService {
         });
 
         slotsGenerated++;
-        currentTime = new Date(currentTime.getTime() + slotStepMs);
+        curMinutes += slotStepMinutes;
       }
 
       console.log(`   Generated ${slotsGenerated} slots from this schedule`);
