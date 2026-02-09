@@ -337,7 +337,12 @@ export class AppointmentsService {
           isException: false,
         },
       });
-      schedules = spaceSchedules.length > 0 ? spaceSchedules : globalSchedules;
+      if (spaceSchedules.length > 0) {
+        schedules = spaceSchedules;
+      } else {
+        console.warn('⚠️ No horarios por espacio para este día; usando horarios globales del tenant.');
+        schedules = globalSchedules;
+      }
     } else {
       // Flujo con profesional/recurso
       const professional = await this.prisma.professional.findFirst({
@@ -367,8 +372,13 @@ export class AppointmentsService {
     console.log('🔍 Availability:', {
       tenantId,
       serviceId: query.serviceId,
+      date: query.date,
+      dayOfWeek,
       bySpaceOnly,
       schedulesFound: schedules.length,
+    });
+    schedules.forEach((s, i) => {
+      console.log(`   Schedule ${i + 1}: ${s.startTime} - ${s.endTime} (dayOfWeek=${s.dayOfWeek})`);
     });
 
     if (schedules.length === 0) {
