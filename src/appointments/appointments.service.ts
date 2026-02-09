@@ -505,6 +505,13 @@ export class AppointmentsService {
     }
     
     const uniqueSlots = Array.from(uniqueSlotsMap.values());
+    // Ordenar por hora (HH:mm) para que el frontend reciba orden consistente
+    const toMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return (h ?? 0) * 60 + (m ?? 0);
+    };
+    uniqueSlots.sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
+
     const availableSlots = uniqueSlots.filter(s => s.available);
     const unavailableSlots = uniqueSlots.filter(s => !s.available);
     
@@ -515,6 +522,9 @@ export class AppointmentsService {
     
     if (availableSlots.length > 0) {
       console.log(`📊 First 10 available slots:`, availableSlots.slice(0, 10).map(s => s.time));
+      if (uniqueSlots.length >= 17) {
+        console.log(`📊 Slot 9 (inicio 2º bloque): ${uniqueSlots[8]?.time}, Slot 17 (inicio 3º bloque): ${uniqueSlots[16]?.time}`);
+      }
     } else {
       console.warn('⚠️ NO AVAILABLE SLOTS FOUND!');
       console.log('📊 First 10 unavailable slots (for debugging):', unavailableSlots.slice(0, 10).map(s => ({
