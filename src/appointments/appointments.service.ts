@@ -505,10 +505,14 @@ export class AppointmentsService {
     }
     
     const uniqueSlots = Array.from(uniqueSlotsMap.values());
-    // Ordenar por hora (HH:mm) para que el frontend reciba orden consistente
-    const toMinutes = (t: string) => {
-      const [h, m] = t.split(':').map(Number);
-      return (h ?? 0) * 60 + (m ?? 0);
+    // Ordenar por hora (HH:mm) para que el frontend reciba orden consistente; defensivo con formatos inválidos
+    const toMinutes = (t: string): number => {
+      if (typeof t !== 'string' || !t.trim()) return 0;
+      const parts = t.trim().split(':').map(Number);
+      const h = parts[0];
+      const m = parts[1] ?? 0;
+      if (Number.isNaN(h) || Number.isNaN(m)) return 0;
+      return h * 60 + m;
     };
     uniqueSlots.sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
 
