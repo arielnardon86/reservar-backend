@@ -451,13 +451,12 @@ export class AppointmentsService {
       let slotsGenerated = 0;
 
       while (curMinutes < endMinutes) {
-        // Hora local literal del edificio (11:00, 11:30, 16:00…) — no UTC, para que el frontend muestre lo configurado
         const h = Math.floor((curMinutes % (24 * 60)) / 60);
         const m = curMinutes % 60;
-        const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-
         const curDayOffset = curMinutes >= 24 * 60 ? 1 : 0;
         const slotStartUtc = localToUTC(baseYear, baseMonth, baseDay + curDayOffset, h, m, timeZone);
+        // Enviar hora formateada en zona del edificio para que frontend y barra verde coincidan sin desfase
+        const timeString = utcToLocalTimeString(slotStartUtc, timeZone);
         const slotEndUtc = new Date(slotStartUtc.getTime() + serviceDuration * 60 * 1000);
 
         const hasConflict = appointments.some(apt => {
