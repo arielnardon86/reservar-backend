@@ -6,7 +6,7 @@ import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { AppointmentStatus } from '@prisma/client';
 
 // Removed manual timezone helpers in favor of date-fns-tz
-import { fromZonedTime, toZonedTime, format as formatTz } from 'date-fns-tz';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { format, getDay } from 'date-fns';
 
 /** Día de la semana (0-6, Domingo=0) para la fecha en la zona del tenant. */
@@ -30,7 +30,8 @@ function localToUTC(year: number, month: number, day: number, hour: number, minu
 
 /** Formatea un Date UTC como "HH:mm" en la zona del tenant. */
 function utcToLocalTimeString(utcDate: Date, timeZone: string): string {
-  return formatTz(utcDate, 'HH:mm', { timeZone });
+  const zonedDate = toZonedTime(utcDate, timeZone);
+  return format(zonedDate, 'HH:mm');
 }
 
 @Injectable()
