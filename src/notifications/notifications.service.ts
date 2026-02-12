@@ -4,12 +4,12 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 
-const GMAIL_FROM = 'ReservAr <reservar.app.ok@gmail.com>';
-
 @Injectable()
 export class NotificationsService {
   private resend: Resend | null = null;
   private gmailTransporter: Transporter | null = null;
+  private gmailFrom: string = 'ReservAr <noreply@reservar.app>';
+  private gmailReplyTo: string = '';
 
   constructor(private prisma: PrismaService) {
     const resendKey = process.env.RESEND_API_KEY;
@@ -27,6 +27,9 @@ export class NotificationsService {
           pass: gmailPass,
         },
       });
+      // GMAIL_FROM: "Mi Empresa <email@empresa.com>" o solo el email
+      this.gmailFrom = process.env.GMAIL_FROM || `${process.env.GMAIL_FROM_NAME || 'ReservAr'} <${gmailUser}>`;
+      this.gmailReplyTo = process.env.GMAIL_REPLY_TO || gmailUser;
       console.log('📧 Gmail configurado para envío de confirmaciones y recordatorios:', gmailUser);
     } else {
       console.warn('⚠️ GMAIL_USER y GMAIL_APP_PASSWORD no configurados. Para enviar desde tu casilla, configuralos en .env');
@@ -48,7 +51,7 @@ export class NotificationsService {
     try {
       if (this.gmailTransporter) {
         await this.gmailTransporter.sendMail({
-          from: GMAIL_FROM,
+          from: this.gmailFrom,
           to: email,
           subject: 'Iniciar sesión en ReservAr',
           html: this.getMagicLinkTemplate(magicLink),
@@ -118,9 +121,9 @@ export class NotificationsService {
       if (this.useGmail() && this.gmailTransporter) {
         console.log('📧 Enviando confirmación por Gmail a:', to);
         await this.gmailTransporter.sendMail({
-          from: GMAIL_FROM,
+          from: this.gmailFrom,
           to,
-          replyTo: 'reservar.app.ok@gmail.com',
+          replyTo: this.gmailReplyTo,
           subject,
           html,
           attachments: [{ filename: icsFilename, content: icsContent }],
@@ -179,9 +182,9 @@ export class NotificationsService {
     try {
       if (this.useGmail() && this.gmailTransporter) {
         await this.gmailTransporter.sendMail({
-          from: GMAIL_FROM,
+          from: this.gmailFrom,
           to,
-          replyTo: 'reservar.app.ok@gmail.com',
+          replyTo: this.gmailReplyTo,
           subject,
           html,
         });
@@ -231,9 +234,9 @@ export class NotificationsService {
     try {
       if (this.useGmail() && this.gmailTransporter) {
         await this.gmailTransporter.sendMail({
-          from: GMAIL_FROM,
+          from: this.gmailFrom,
           to,
-          replyTo: 'reservar.app.ok@gmail.com',
+          replyTo: this.gmailReplyTo,
           subject,
           html,
         });
