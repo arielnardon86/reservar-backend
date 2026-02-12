@@ -5,52 +5,32 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { AppointmentStatus } from '@prisma/client';
 
-/** Minutos a sumar a medianoche UTC para obtener medianoche en la zona horaria del tenant. */
-function getTZOffsetMinutes(year: number, month: number, day: number, timeZone: string): number {
-  const utcNoon = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(utcNoon);
-  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '12', 10);
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
-  return (12 - hour) * 60 - minute;
-}
+// Removed manual timezone helpers in favor of date-fns-tz
+import { fromZonedTime, toZonedTime, format as formatTz } from 'date-fns-tz';
+import { format, getDay } from 'date-fns';
 
 /** Día de la semana (0-6, Domingo=0) para la fecha en la zona del tenant. */
 function getDayOfWeekInTZ(year: number, month: number, day: number, timeZone: string): number {
-  const offsetMin = getTZOffsetMinutes(year, month, day, timeZone);
-  const midnightTZUtc = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0)).getTime() + offsetMin * 60 * 1000;
-  const formatter = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' });
-  const short = formatter.format(new Date(midnightTZUtc));
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return map[short] ?? 0;
+  // Construir fecha string "YYYY-MM-DD" para asegurar interpretación correcta en zona
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} 12:00`;
+  const zonedDate = fromZonedTime(dateStr, timeZone);
+  // getDay devuelve 0-6 (domingo-sábado) basado en la fecha local, pero zonedDate es UTC
+  // Necesitamos el día de la semana EN LA ZONA.
+  // fromZonedTime devuelve el instante UTC que corresponde a "12:00 en TimeZone".
+  // Si pedimos toZonedTime de ese instante, obtenemos fecha con componentes locales.
+  const localDate = toZonedTime(zonedDate, timeZone);
+  return getDay(localDate);
 }
 
-/** Convierte HH:mm en la zona del tenant (para la fecha dada) a instante UTC (Date). */
+/** Convierte HH:mm en la zona del tenant a instante UTC (Date). */
 function localToUTC(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
-  const offsetMin = getTZOffsetMinutes(year, month, day, timeZone);
-  const utcMs =
-    new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0)).getTime() +
-    (offsetMin + hour * 60 + minute) * 60 * 1000;
-  return new Date(utcMs);
+  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return fromZonedTime(dateStr, timeZone);
 }
 
 /** Formatea un Date UTC como "HH:mm" en la zona del tenant. */
 function utcToLocalTimeString(utcDate: Date, timeZone: string): string {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(utcDate);
-  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
-  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+  return formatTz(utcDate, 'HH:mm', { timeZone });
 }
 
 @Injectable()
@@ -58,7 +38,7 @@ export class AppointmentsService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   async create(tenantId: string, createAppointmentDto: CreateAppointmentDto) {
     try {
@@ -101,104 +81,104 @@ export class AppointmentsService {
           endTime: endTime.toISOString(),
         });
 
-      // Primero, obtener o crear el customer para verificar duplicados
-      const customer = await tx.customer.upsert({
-        where: {
-          tenantId_email: {
+        // Primero, obtener o crear el customer para verificar duplicados
+        const customer = await tx.customer.upsert({
+          where: {
+            tenantId_email: {
+              tenantId,
+              email: createAppointmentDto['customerEmail'] || 'unknown@example.com',
+            },
+          },
+          update: {},
+          create: {
             tenantId,
+            firstName: createAppointmentDto['customerFirstName'] || 'Cliente',
+            lastName: createAppointmentDto['customerLastName'] || 'Anónimo',
             email: createAppointmentDto['customerEmail'] || 'unknown@example.com',
           },
-        },
-        update: {},
-        create: {
-          tenantId,
-          firstName: createAppointmentDto['customerFirstName'] || 'Cliente',
-          lastName: createAppointmentDto['customerLastName'] || 'Anónimo',
-          email: createAppointmentDto['customerEmail'] || 'unknown@example.com',
-        },
-      });
-
-      const professionalIdOrNull = createAppointmentDto.professionalId ?? null;
-
-      // Verificar duplicados exactos (mismo cliente, mismo horario)
-      const duplicateAppointment = await tx.appointment.findFirst({
-        where: {
-          tenantId,
-          customerId: customer.id,
-          serviceId: createAppointmentDto.serviceId,
-          ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
-          status: {
-            not: AppointmentStatus.CANCELLED,
-          },
-          startTime: {
-            gte: new Date(startTime.getTime() - 60000),
-            lte: new Date(startTime.getTime() + 60000),
-          },
-        },
-      });
-
-      if (duplicateAppointment) {
-        console.warn('⚠️ Duplicate appointment found:', {
-          duplicateId: duplicateAppointment.id,
-          duplicateStart: duplicateAppointment.startTime,
-          newStart: startTime,
-          customerId: customer.id,
-          customerEmail: customer.email,
         });
-        throw new ConflictException('Ya tienes un turno reservado en este horario. Por favor verifica tus turnos.');
-      }
 
-      // Verificar conflictos de horario (mismo espacio/recurso ya reservado)
-      const conflicting = await tx.appointment.findFirst({
-        where: {
-          tenantId,
-          serviceId: createAppointmentDto.serviceId,
-          ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
-          status: {
-            not: AppointmentStatus.CANCELLED,
+        const professionalIdOrNull = createAppointmentDto.professionalId ?? null;
+
+        // Verificar duplicados exactos (mismo cliente, mismo horario)
+        const duplicateAppointment = await tx.appointment.findFirst({
+          where: {
+            tenantId,
+            customerId: customer.id,
+            serviceId: createAppointmentDto.serviceId,
+            ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
+            status: {
+              not: AppointmentStatus.CANCELLED,
+            },
+            startTime: {
+              gte: new Date(startTime.getTime() - 60000),
+              lte: new Date(startTime.getTime() + 60000),
+            },
           },
-          OR: [
-            // El nuevo turno empieza durante un turno existente
-            {
-              startTime: {
-                lte: startTime,
-              },
-              endTime: {
-                gt: startTime,
-              },
-            },
-            // El nuevo turno termina durante un turno existente
-            {
-              startTime: {
-                lt: endTime,
-              },
-              endTime: {
-                gte: endTime,
-              },
-            },
-            // El nuevo turno contiene completamente un turno existente
-            {
-              startTime: {
-                gte: startTime,
-              },
-              endTime: {
-                lte: endTime,
-              },
-            },
-          ],
-        },
-      });
-
-      if (conflicting) {
-        console.warn('⚠️ Conflicting appointment found:', {
-          conflictingId: conflicting.id,
-          conflictingStart: conflicting.startTime,
-          conflictingEnd: conflicting.endTime,
-          newStart: startTime,
-          newEnd: endTime,
         });
-        throw new ConflictException('Este horario ya está reservado. Por favor selecciona otro horario.');
-      }
+
+        if (duplicateAppointment) {
+          console.warn('⚠️ Duplicate appointment found:', {
+            duplicateId: duplicateAppointment.id,
+            duplicateStart: duplicateAppointment.startTime,
+            newStart: startTime,
+            customerId: customer.id,
+            customerEmail: customer.email,
+          });
+          throw new ConflictException('Ya tienes un turno reservado en este horario. Por favor verifica tus turnos.');
+        }
+
+        // Verificar conflictos de horario (mismo espacio/recurso ya reservado)
+        const conflicting = await tx.appointment.findFirst({
+          where: {
+            tenantId,
+            serviceId: createAppointmentDto.serviceId,
+            ...(professionalIdOrNull ? { professionalId: professionalIdOrNull } : { professionalId: null }),
+            status: {
+              not: AppointmentStatus.CANCELLED,
+            },
+            OR: [
+              // El nuevo turno empieza durante un turno existente
+              {
+                startTime: {
+                  lte: startTime,
+                },
+                endTime: {
+                  gt: startTime,
+                },
+              },
+              // El nuevo turno termina durante un turno existente
+              {
+                startTime: {
+                  lt: endTime,
+                },
+                endTime: {
+                  gte: endTime,
+                },
+              },
+              // El nuevo turno contiene completamente un turno existente
+              {
+                startTime: {
+                  gte: startTime,
+                },
+                endTime: {
+                  lte: endTime,
+                },
+              },
+            ],
+          },
+        });
+
+        if (conflicting) {
+          console.warn('⚠️ Conflicting appointment found:', {
+            conflictingId: conflicting.id,
+            conflictingStart: conflicting.startTime,
+            conflictingEnd: conflicting.endTime,
+            newStart: startTime,
+            newEnd: endTime,
+          });
+          throw new ConflictException('Este horario ya está reservado. Por favor selecciona otro horario.');
+        }
 
         // Crear appointment dentro de la transacción
         console.log('📝 Creating appointment in transaction...');
@@ -401,8 +381,8 @@ export class AppointmentsService {
       where: appointmentsWhere,
       orderBy: { startTime: 'asc' },
     });
-    
-    console.log(`📅 Found ${appointments.length} existing appointments for ${query.date}:`, 
+
+    console.log(`📅 Found ${appointments.length} existing appointments for ${query.date}:`,
       appointments.map(apt => ({
         id: apt.id,
         startTime: apt.startTime.toISOString(),
@@ -494,7 +474,7 @@ export class AppointmentsService {
     // Eliminar slots duplicados (mismo tiempo)
     // Usar un Map para mantener solo el último slot de cada tiempo
     const uniqueSlotsMap = new Map<string, { time: string; available: boolean }>();
-    
+
     for (const slot of slots) {
       // Si ya existe un slot con este tiempo, mantener el que tenga available=true si es posible
       const existing = uniqueSlotsMap.get(slot.time);
@@ -502,7 +482,7 @@ export class AppointmentsService {
         uniqueSlotsMap.set(slot.time, slot);
       }
     }
-    
+
     const uniqueSlots = Array.from(uniqueSlotsMap.values());
     // Ordenar por hora (HH:mm) para que el frontend reciba orden consistente; defensivo con formatos inválidos
     const toMinutes = (t: string): number => {
@@ -517,12 +497,12 @@ export class AppointmentsService {
 
     const availableSlots = uniqueSlots.filter(s => s.available);
     const unavailableSlots = uniqueSlots.filter(s => !s.available);
-    
+
     console.log(`✅ Total slots generated: ${slots.length}`);
     console.log(`✅ Unique slots: ${uniqueSlots.length}`);
     console.log(`✅ Available slots: ${availableSlots.length}`);
     console.log(`❌ Unavailable slots: ${unavailableSlots.length}`);
-    
+
     if (availableSlots.length > 0) {
       console.log(`📊 First 10 available slots:`, availableSlots.slice(0, 10).map(s => s.time));
       if (uniqueSlots.length >= 17) {
