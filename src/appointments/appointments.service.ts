@@ -14,10 +14,7 @@ function getDayOfWeekInTZ(year: number, month: number, day: number, timeZone: st
   // Construir fecha string "YYYY-MM-DD" para asegurar interpretación correcta en zona
   const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} 12:00`;
   const zonedDate = fromZonedTime(dateStr, timeZone);
-  // getDay devuelve 0-6 (domingo-sábado) basado en la fecha local, pero zonedDate es UTC
-  // Necesitamos el día de la semana EN LA ZONA.
-  // fromZonedTime devuelve el instante UTC que corresponde a "12:00 en TimeZone".
-  // Si pedimos toZonedTime de ese instante, obtenemos fecha con componentes locales.
+  // Obtener fecha en la zona horaria destino
   const localDate = toZonedTime(zonedDate, timeZone);
   return getDay(localDate);
 }
@@ -30,8 +27,9 @@ function localToUTC(year: number, month: number, day: number, hour: number, minu
 
 /** Formatea un Date UTC como "HH:mm" en la zona del tenant. */
 function utcToLocalTimeString(utcDate: Date, timeZone: string): string {
-  const zonedDate = toZonedTime(utcDate, timeZone);
-  return format(zonedDate, 'HH:mm');
+  // Usar format de date-fns-tz para formatear directamente en la zona horaria correcta
+  // Esto maneja correctamente la conversión sin depender de la zona horaria del sistema
+  return format(toZonedTime(utcDate, timeZone), 'HH:mm');
 }
 
 @Injectable()
