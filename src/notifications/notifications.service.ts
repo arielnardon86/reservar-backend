@@ -102,7 +102,7 @@ export class NotificationsService {
       tenant?.name || 'ReservAr',
     );
 
-    const subject = `Confirmación de reserva - ${appointment.service.name}`;
+    const subject = `Confirmación de reserva - ${appointment.service.name}${tenant?.name ? ` - ${tenant.name}` : ''}`;
     const html = this.getAppointmentConfirmationTemplate(
       appointment,
       tenant,
@@ -325,6 +325,7 @@ export class NotificationsService {
             <div style="background: white; padding: 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #667eea;">
               <h2 style="margin-top: 0; color: #667eea;">Detalles de la reserva</h2>
               <p><strong>Espacio:</strong> ${appointment.service.name}</p>
+              ${tenant?.name ? `<p><strong>Edificio:</strong> ${tenant.name}</p>` : ''}
               ${appointment.professional ? `<p><strong>Recurso:</strong> ${appointment.professional.fullName}</p>` : ''}
               <p><strong>Fecha:</strong> ${formatDate(startDate)}</p>
               <p><strong>Hora:</strong> ${formatTime(startDate)} - ${formatTime(endDate)}</p>
