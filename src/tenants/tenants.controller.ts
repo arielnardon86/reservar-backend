@@ -34,6 +34,12 @@ export class TenantsController {
     }
   }
 
+  // Público: Rango horario del edificio (para grilla de reservas)
+  @Get('slug/:slug/schedule-range')
+  getScheduleRange(@Param('slug') slug: string) {
+    return this.tenantsService.getScheduleRangeBySlug(slug);
+  }
+
   // Público: Obtener tenant por slug (para landing pública)
   @Get('slug/:slug')
   findBySlug(@Param('slug') slug: string) {

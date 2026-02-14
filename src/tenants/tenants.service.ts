@@ -128,6 +128,54 @@ export class TenantsService {
     return publicTenant;
   }
 
+  /** Rango horario del primer turno configurado para el edificio (para la grilla de reservas). */
+  async getScheduleRangeBySlug(slug: string): Promise<{ startHour: number; endHour: number }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { slug, isActive: true },
+      select: { id: true },
+    });
+    if (!tenant) {
+      return { startHour: 0, endHour: 24 }; // fallback
+    }
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        isException: false,
+        OR: [
+          { tenantId: tenant.id, serviceId: null, professionalId: null },
+          { service: { tenantId: tenant.id } },
+        ],
+      },
+      select: { startTime: true, endTime: true },
+    });
+
+    const parseMinutes = (s: string): number => {
+      if (typeof s !== 'string' || !s.trim()) return 0;
+      const [h, m] = s.trim().split(':').map(Number);
+      return (h ?? 0) * 60 + (m ?? 0);
+    };
+
+    let minStart = 24 * 60; // 24:00
+    let maxEnd = 0;
+
+    for (const sch of schedules) {
+      const start = parseMinutes(sch.startTime);
+      let end = parseMinutes(sch.endTime);
+      if (end <= start) end += 24 * 60; // ej. 22:00-02:00
+      minStart = Math.min(minStart, start);
+      maxEnd = Math.max(maxEnd, end);
+    }
+
+    if (schedules.length === 0) {
+      return { startHour: 0, endHour: 24 };
+    }
+
+    return {
+      startHour: Math.floor(minStart / 60),
+      endHour: Math.min(24, Math.ceil(maxEnd / 60)),
+    };
+  }
+
   async findOne(id: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
