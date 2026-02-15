@@ -518,6 +518,32 @@ export class AppointmentsService {
     return uniqueSlots;
   }
 
+  /** Bloques de horario configurados para un espacio en una fecha (para popup: mostrar cierre real ej. 01:30) */
+  async getScheduleBlocks(tenantId: string, serviceId: string, date: string): Promise<{ startTime: string; endTime: string }[]> {
+    const dateParts = date.split('-');
+    if (dateParts.length !== 3) throw new Error('Date must be YYYY-MM-DD');
+    const [baseYear, baseMonth, baseDay] = dateParts.map(Number);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { timezone: true },
+    });
+    const timeZone = tenant?.timezone ?? 'America/Argentina/Buenos_Aires';
+    const dayOfWeek = getDayOfWeekInTZ(baseYear, baseMonth, baseDay, timeZone);
+
+    const spaceSchedules = await this.prisma.schedule.findMany({
+      where: { serviceId, dayOfWeek, isException: false },
+    });
+    const globalSchedules = await this.prisma.schedule.findMany({
+      where: { tenantId, serviceId: null, professionalId: null, dayOfWeek, isException: false },
+    });
+    const schedules = spaceSchedules.length > 0 ? spaceSchedules : globalSchedules;
+
+    return schedules.map((s) => ({
+      startTime: (s.startTime || '00:00').toString().trim().substring(0, 5),
+      endTime: (s.endTime || '24:00').toString().trim().substring(0, 5),
+    }));
+  }
+
   // Público: Obtener appointments del día (solo para visualización, sin datos sensibles)
   async getDayAppointments(tenantId: string, date: string) {
     const dateParts = date.split('-');

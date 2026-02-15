@@ -63,6 +63,18 @@ export class AppointmentsController {
     }
   }
 
+  // Público: Bloques de horario por espacio/fecha (para popup: cierre real ej. 20:00-01:30)
+  @Get('schedule-blocks')
+  async getScheduleBlocks(
+    @Query('tenantSlug') tenantSlug: string,
+    @Query('serviceId') serviceId: string,
+    @Query('date') date: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    return this.appointmentsService.getScheduleBlocks(tenant.id, serviceId, date);
+  }
+
   // Público: Obtener appointments del día (para visualización)
   @Get('day')
   async getDayAppointments(
